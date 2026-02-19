@@ -1,3 +1,4 @@
+import multiprocessing as mp
 import bleak
 import numpy as np
 import pandas as pd
@@ -268,3 +269,139 @@ def record_direct(duration,
 
     recording.to_csv(filename, float_format='%.3f')
     print('Done - wrote file: ' + filename + '.')
+
+
+class Recorder:
+
+    def __init__(
+            self,
+            filename=None,
+            dejitter=False,
+            data_source="EEG",
+            continuous: bool = True,
+            verbose = False,
+    ):
+        self._is_recording = mp.Value("i", False)
+        self._record_process = mp.Process(
+            target=self._record,
+            args=(self._is_recording, filename, dejitter, data_source, continuous, verbose)
+        )
+
+    def start_record(self):
+        if self._is_recording.value:
+            raise RuntimeError('Recorder is already started.')
+        self._is_recording.value = True
+
+        self._record_process.start()
+
+    def end_record(self):
+        if not self._is_recording.value:
+            raise RuntimeError('Recorder is not started.')
+        self._is_recording.value = False
+
+        self._record_process.join()
+
+    @staticmethod
+    def _record(
+            is_recording,
+            filename,
+            dejitter,
+            data_source,
+            continuous: bool,
+            verbose,
+    ):
+        chunk_length = LSL_EEG_CHUNK
+        if data_source == "PPG":
+            chunk_length = LSL_PPG_CHUNK
+        if data_source == "ACC":
+            chunk_length = LSL_ACC_CHUNK
+        if data_source == "GYRO":
+            chunk_length = LSL_GYRO_CHUNK
+
+        if not filename:
+            filename = os.path.join(os.getcwd(), "%s_recording_%s.csv" %
+                                    (data_source,
+                                     strftime('%Y-%m-%d-%H.%M.%S', gmtime())))
+
+        if verbose:
+            print("Looking for a %s stream..." % (data_source))
+        streams = resolve_byprop('type', data_source, timeout=LSL_SCAN_TIMEOUT)
+
+        if len(streams) == 0:
+            print("Can't find %s stream." % (data_source))
+            return
+
+        if verbose:
+            print("Started acquiring data.")
+        inlet = StreamInlet(streams[0], max_chunklen=chunk_length)
+        # eeg_time_correction = inlet.time_correction()
+
+        if verbose:
+            print("Looking for a Markers stream...")
+        marker_streams = resolve_byprop(
+            'name', 'Markers', timeout=LSL_SCAN_TIMEOUT)
+
+        if marker_streams:
+            inlet_marker = StreamInlet(marker_streams[0])
+        else:
+            inlet_marker = False
+            if verbose:
+                print("Can't find Markers stream.")
+
+        info = inlet.info()
+        description = info.desc()
+
+        Nchan = info.channel_count()
+
+        ch = description.child('channels').first_child()
+        ch_names = [ch.child_value('label')]
+        for i in range(1, Nchan):
+            ch = ch.next_sibling()
+            ch_names.append(ch.child_value('label'))
+
+        res = []
+        timestamps = []
+        markers = []
+        t_init = time()
+        time_correction = inlet.time_correction()
+        last_written_timestamp = None
+        if verbose:
+            print('Start recording at time t=%.3f' % t_init)
+            print('Time correction: ', time_correction)
+        while is_recording.value:
+            data, timestamp = inlet.pull_chunk(
+                timeout=1.0, max_samples=chunk_length)
+
+            if timestamp:
+                res.append(data)
+                timestamps.extend(timestamp)
+                tr = time()
+            if inlet_marker:
+                marker, timestamp = inlet_marker.pull_sample(timeout=0.0)
+                if timestamp:
+                    markers.append([marker, timestamp])
+
+            # Save every 5s
+            if (
+                (continuous and (last_written_timestamp is None or last_written_timestamp + 5 < timestamps[-1]))
+                or not is_recording.value
+            ):
+                _save(
+                    filename,
+                    res,
+                    timestamps,
+                    time_correction,
+                    dejitter,
+                    inlet_marker,
+                    markers,
+                    ch_names,
+                    last_written_timestamp=last_written_timestamp,
+                )
+                last_written_timestamp = timestamps[-1]
+
+        time_correction = inlet.time_correction()
+        if verbose:
+            print("Time correction: ", time_correction)
+
+        if verbose:
+            print("Done - wrote file: {}".format(filename))
