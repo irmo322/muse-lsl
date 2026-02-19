@@ -167,12 +167,12 @@ def _save(
     # If it does exist, just append new rows
     if not Path(filename).exists():
         # print("Saving whole file")
-        data.to_csv(filename, float_format='%.3f', index=False)
+        data.to_csv(filename, float_format='%.5f', index=False)
     else:
         # print("Appending file")
         # truncate already written timestamps
         data = data[data['timestamps'] > last_written_timestamp]
-        data.to_csv(filename, float_format='%.3f', index=False, mode='a', header=False)
+        data.to_csv(filename, float_format='%.5f', index=False, mode='a', header=False)
 
 
 
