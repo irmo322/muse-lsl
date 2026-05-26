@@ -279,12 +279,23 @@ class Recorder:
             dejitter=False,
             data_source="EEG",
             continuous: bool = True,
+            search_markers: bool = False,
             verbose = False,
     ):
         self._is_recording = mp.Value("i", False)
+        self.recording_has_start = mp.Value("i", False)
         self._record_process = mp.Process(
             target=self._record,
-            args=(self._is_recording, filename, dejitter, data_source, continuous, verbose)
+            args=(
+                self._is_recording,
+                self.recording_has_start,
+                filename,
+                dejitter,
+                data_source,
+                continuous,
+                search_markers,
+                verbose,
+            ),
         )
 
     def start_record(self):
@@ -304,10 +315,12 @@ class Recorder:
     @staticmethod
     def _record(
             is_recording,
+            recording_has_start,
             filename,
             dejitter,
             data_source,
             continuous: bool,
+            search_markers: bool,
             verbose,
     ):
         chunk_length = LSL_EEG_CHUNK
@@ -336,17 +349,22 @@ class Recorder:
         inlet = StreamInlet(streams[0], max_chunklen=chunk_length)
         # eeg_time_correction = inlet.time_correction()
 
-        if verbose:
-            print("Looking for a Markers stream...")
-        marker_streams = resolve_byprop(
-            'name', 'Markers', timeout=LSL_SCAN_TIMEOUT)
-
-        if marker_streams:
-            inlet_marker = StreamInlet(marker_streams[0])
-        else:
-            inlet_marker = False
+        if search_markers:
             if verbose:
-                print("Can't find Markers stream.")
+                print("Looking for a Markers stream...")
+            marker_streams = resolve_byprop(
+                'name', 'Markers', timeout=LSL_SCAN_TIMEOUT)
+
+            if marker_streams:
+                inlet_marker = StreamInlet(marker_streams[0])
+            else:
+                inlet_marker = False
+                if verbose:
+                    print("Can't find Markers stream.")
+        else:
+            if verbose:
+                print("Skipping markers stream.")
+            inlet_marker = False
 
         info = inlet.info()
         description = info.desc()
@@ -368,11 +386,18 @@ class Recorder:
         if verbose:
             print('Start recording at time t=%.3f' % t_init)
             print('Time correction: ', time_correction)
+
+        first_time = True
+
         while is_recording.value:
             data, timestamp = inlet.pull_chunk(
                 timeout=1.0, max_samples=chunk_length)
 
             if timestamp:
+                if first_time:
+                    recording_has_start.value = True
+                    first_time = False
+
                 res.append(data)
                 timestamps.extend(timestamp)
                 tr = time()
@@ -398,6 +423,8 @@ class Recorder:
                     last_written_timestamp=last_written_timestamp,
                 )
                 last_written_timestamp = timestamps[-1]
+
+        recording_has_start.value = False
 
         time_correction = inlet.time_correction()
         if verbose:

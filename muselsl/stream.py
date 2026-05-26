@@ -137,6 +137,7 @@ def stream(
     disable_light=False,
     lsl_time=False,
     retries=1,
+    is_active=None,
     log_level=logging.ERROR
 ):
     # If no data types are enabled, we warn the user and return immediately.
@@ -238,6 +239,9 @@ def stream(
             print("Streaming%s%s%s%s..." %
                 (eeg_string, ppg_string, acc_string, gyro_string))
 
+            if is_active is not None:
+                is_active.value = True
+
             while time_func() - muse.last_timestamp < AUTO_DISCONNECT_DELAY:
                 try:
                     backends.sleep(1)
@@ -245,6 +249,9 @@ def stream(
                     muse.stop()
                     muse.disconnect()
                     break
+
+            if is_active is not None:
+                is_active.value = False
 
             print('Disconnected.')
 

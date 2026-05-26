@@ -8,7 +8,7 @@ from threading import Thread
 from .constants import VIEW_BUFFER, VIEW_SUBSAMPLE, LSL_SCAN_TIMEOUT, LSL_EEG_CHUNK
 
 
-def view(window, scale, refresh, figure, backend, version=1):
+def view(window, scale, refresh, figure, backend, version=1, ready=None):
     matplotlib.use(backend)
     sns.set(style="whitegrid")
 
@@ -35,6 +35,10 @@ def view(window, scale, refresh, figure, backend, version=1):
                """
     print(help_str)
     lslv.start()
+
+    if ready is not None:
+        ready.value = True
+
     matplotlib.pyplot.show()
 
 
