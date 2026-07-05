@@ -4,6 +4,7 @@ from functools import partial
 from shutil import which
 from sys import platform
 from time import time
+import json
 import logging
 
 import pygatt
@@ -222,13 +223,27 @@ def stream(
 
         time_func = local_clock if lsl_time else time
 
+        def callback_control(message):
+            try:
+                d = json.loads(message)
+            except ValueError:
+                print("MUSE : Invalid message from control.")
+                return
+            assert isinstance(d, dict)
+            if "bp" in d:
+                print(f"Muse battery: {d['bp']}%")
+
         muse = Muse(address=address, callback_eeg=push_eeg, callback_ppg=push_ppg, callback_acc=push_acc, callback_gyro=push_gyro,
+                    callback_control=callback_control,
                     backend=backend, interface=interface, name=name, preset=preset, disable_light=disable_light, time_func=time_func, log_level=log_level)
 
         didConnect = muse.connect(retries=retries)
 
         if(didConnect):
             print('Connected.')
+
+            muse.ask_control()
+
             muse.start()
 
             eeg_string = " EEG" if not eeg_disabled else ""
