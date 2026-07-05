@@ -8,7 +8,7 @@ from threading import Thread
 from .constants import VIEW_BUFFER, VIEW_SUBSAMPLE, LSL_SCAN_TIMEOUT, LSL_EEG_CHUNK
 
 
-def view(window, scale, refresh, figure, backend, version=1, ready=None):
+def view(window, scale, refresh, figure, backend, version=1, ready=None, filt=True):
     matplotlib.use(backend)
     sns.set(style="whitegrid")
 
@@ -22,7 +22,7 @@ def view(window, scale, refresh, figure, backend, version=1, ready=None):
     print("Start acquiring data.")
 
     fig, axes = matplotlib.pyplot.subplots(1, 1, figsize=figsize, sharex=True)
-    lslv = LSLViewer(streams[0], fig, axes, window, scale)
+    lslv = LSLViewer(streams[0], fig, axes, window, scale, filt=filt)
     fig.canvas.mpl_connect('close_event', lslv.stop)
 
     help_str = """
@@ -43,14 +43,14 @@ def view(window, scale, refresh, figure, backend, version=1, ready=None):
 
 
 class LSLViewer():
-    def __init__(self, stream, fig, axes, window, scale, dejitter=True):
+    def __init__(self, stream, fig, axes, window, scale, dejitter=True, filt=True):
         """Init"""
         self.stream = stream
         self.window = window
         self.scale = scale
         self.dejitter = dejitter
         self.inlet = StreamInlet(stream, max_chunklen=LSL_EEG_CHUNK)
-        self.filt = True
+        self.filt = filt
         self.subsample = VIEW_SUBSAMPLE
 
         info = self.inlet.info()
